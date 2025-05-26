@@ -8,6 +8,10 @@ jobs:
   docker:
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: read
+      id-token: write
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -46,3 +50,9 @@ jobs:
         with:
           name: syft-sbom
           path: sbom/syft-sbom-${{ steps.vars.outputs.sha_short }}.spdx.json
+
+      - name: Generate SBOM and submit to GitHub dependency graph
+        uses: anchore/sbom-action@v0.15.3
+        with:
+          image: securapoint/react-frontend:${{ steps.vars.outputs.sha_short }}
+          output-format: github
