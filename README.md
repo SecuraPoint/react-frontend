@@ -3,6 +3,7 @@ A sample react frontend
 
 ## Prerequisites
 - nix shell installed locally (or install nodejs otherwise)
+- syft installed ([install instructions](https://github.com/anchore/syft?tab=readme-ov-file#installation))
 
 ## Run in dev mode with dependencies
 
@@ -17,6 +18,14 @@ npm install
 npm run dev
 ```
 
+## Run syft scans
+Run the following commands to scan the project with syft.
+
+```bash
+# Create CyclonDX SBOM from project root
+syft ./ -o cyclonedx-json > sbom/cyclonedx.json
+
+```
 
 
 ## React + Vite
