@@ -18,6 +18,19 @@ npm install
 npm run dev
 ```
 
+## Build docker image and run react in docker
+Do the following to build the docker image and run the sample react frontend in the docker container.
+
+```bash
+# Build the image
+docker build -t react-frontend .
+
+# Run the container
+docker run -p 3000:80 react-frontend
+```
+
+Now visit [http://localhost:3000/](http://localhost:3000/) to see the app running.
+
 ## Run syft scans
 Run the following commands to scan the project with syft.
 
