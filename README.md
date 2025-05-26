@@ -35,9 +35,14 @@ Now visit [http://localhost:3000/](http://localhost:3000/) to see the app runnin
 Run the following commands to scan the project with syft.
 
 ```bash
-# Create CyclonDX SBOM from project root
-syft ./ -o cyclonedx-json > sbom/cyclonedx.json
+# Create CycloneDX SBOM from project root
+syft ./ -o cyclonedx-json > scan-results/files-sbom-cyclonedx.json
 
+# Run docker image scan and generate syft json
+syft securapoint/react-frontend:latest -o syft-json > scan-results/syft.json
+
+# Run docker image scan and generate CycloneDX SBOM of docker image
+syft securapoint/react-frontend:latest -o cyclonedx-json > scan-results/image-sbom-cyclonedx.json
 ```
 
 
