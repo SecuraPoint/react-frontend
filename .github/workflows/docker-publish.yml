@@ -39,10 +39,10 @@ jobs:
         with:
           image: securapoint/react-frontend:${{ steps.vars.outputs.sha_short }}
           format: spdx-json
-          output-file: sbom/syft-sbom-${{ steps.vars.outputs.sha_short }}.spdx.json
+          output-file: syft-sbom-${{ steps.vars.outputs.sha_short }}.spdx.json
 
       - name: Upload SBOM artifact
         uses: actions/upload-artifact@v4
         with:
           name: syft-sbom
-          path: sbom/syft-sbom-${{ steps.vars.outputs.sha_short }}.spdx.json
+          path: syft-sbom-${{ steps.vars.outputs.sha_short }}.spdx.json
