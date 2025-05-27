@@ -40,6 +40,7 @@ jobs:
           image: securapoint/react-frontend:${{ steps.vars.outputs.sha_short }}
           format: cyclonedx-json
           output-file: syft-sbom-image-${{ steps.vars.outputs.sha_short }}.cyclonedx.json
+          config: .syft.yaml
 
       - name: Generate path SBOM and upload artifact
         uses: anchore/sbom-action@v0
@@ -47,3 +48,4 @@ jobs:
           path: ./
           format: cyclonedx-json
           output-file: syft-sbom-file-${{ steps.vars.outputs.sha_short }}.cyclonedx.json
+          config: .syft.yaml
