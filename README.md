@@ -44,8 +44,11 @@ syft securapoint/react-frontend:latest -o syft-json > scan-results/syft.json
 # Run docker image scan and generate CycloneDX SBOM of docker image
 syft securapoint/react-frontend:latest -o cyclonedx-json > scan-results/image-sbom-cyclonedx.json
 
-# Create A JSON report conforming to GitHub's dependency snapshot format
+# Create a JSON report conforming to GitHub's dependency snapshot format
 syft securapoint/react-frontend:latest -o github-json > scan-results/github-dependencies.json
+
+# Create a CycloneDX SBOM from project root with npm cataloger
+syft ./ --select-catalogers "npm" -o cyclonedx-json > scan-results/files-npm-cataloger-sbom-cyclonedx.json
 ```
 
 
