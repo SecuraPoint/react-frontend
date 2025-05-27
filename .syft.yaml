@@ -23,12 +23,8 @@ config: '.syft.yaml'
 # output:
 #   - "syft-json=<syft-json-output-file>"
 #   - "spdx-json=<spdx-json-output-file>" (env: SYFT_OUTPUT)
-# INTERESTING
 output:
   - 'syft-table'
-  - 'cyclonedx-json=scan-results/sbom-cyclonedx.json'
-  - 'syft-json=scan-results/syft.json'
-  - 'github-json=scan-results/github.json'
 
 # file to write the default report output to (default is STDOUT) (env: SYFT_LEGACYFILE)
 legacyFile: ''

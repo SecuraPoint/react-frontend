@@ -5,7 +5,7 @@ on:
     branches: [main]
 
 jobs:
-  docker:
+  build-and-analyse:
     runs-on: ubuntu-latest
 
     steps:
@@ -41,7 +41,7 @@ jobs:
           format: cyclonedx-json
           output-file: syft-sbom-image-${{ steps.vars.outputs.sha_short }}.cyclonedx.json
 
-      - name: Generate file/repository SBOM and upload artifact
+      - name: Generate path SBOM and upload artifact
         uses: anchore/sbom-action@v0
         with:
           path: ./

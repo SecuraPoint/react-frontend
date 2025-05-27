@@ -46,10 +46,18 @@ syft securapoint/react-frontend:latest -o cyclonedx-json > scan-results/image-sb
 
 # Create a JSON report conforming to GitHub's dependency snapshot format
 syft securapoint/react-frontend:latest -o github-json > scan-results/github-dependencies.json
-
-# Create a CycloneDX SBOM from project root with npm cataloger
-syft ./ --select-catalogers "npm" -o cyclonedx-json > scan-results/files-npm-cataloger-sbom-cyclonedx.json
 ```
+
+You can also run all commands in one by using multiple outputs.
+
+```bash
+# Run all path scans
+syft ./ -o cyclonedx-json > scan-results/files-sbom-cyclonedx.json
+
+# Run all image scans
+syft securapoint/react-frontend:latest -o syft-json > scan-results/syft.json  -o cyclonedx-json > scan-results/image-sbom-cyclonedx.json -o github-json > scan-results/github-dependencies.json
+```
+
 
 
 ## React + Vite
