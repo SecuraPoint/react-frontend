@@ -34,9 +34,16 @@ jobs:
             securapoint/react-frontend:latest
             securapoint/react-frontend:${{ steps.vars.outputs.sha_short }}
 
-      - name: Install Syft, generate SBOM and upload artifact
+      - name: Generate image SBOM and upload artifact
         uses: anchore/sbom-action@v0
         with:
           image: securapoint/react-frontend:${{ steps.vars.outputs.sha_short }}
           format: cyclonedx-json
-          output-file: syft-sbom-${{ steps.vars.outputs.sha_short }}.cyclonedx.json
+          output-file: syft-sbom-image-${{ steps.vars.outputs.sha_short }}.cyclonedx.json
+
+      - name: Generate file/repository SBOM and upload artifact
+        uses: anchore/sbom-action@v0
+        with:
+          file: ./
+          format: cyclonedx-json
+          output-file: syft-sbom-file-${{ steps.vars.outputs.sha_short }}.cyclonedx.json
