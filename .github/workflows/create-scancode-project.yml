@@ -30,10 +30,12 @@ jobs:
       - name: POST project to Scancode.io API
         uses: fjogeleit/http-request-action@v1
         with:
-          url: "${API_BASE}/api/projects/"
-          method: "POST"
-          customHeaders: '{"Authorization": "Token ${API_TOKEN}"}'
-          data: '{"name": "${PROJECT_NAME}","input_urls": "${INPUT_URL}","pipeline": ["resolve_dependencies:StaticResolver"],"execute_now": true}'
+          url: ${{ format('{0}/api/projects/', env.API_BASE) }}
+          method: 'POST'
+          customHeaders: >-
+            {"Content-Type":"application/json","Authorization":"Token ${{ secrets.SCANCODEIO_API_KEY }}"}
+          data: >-
+            {"name":"${{ env.PROJECT_NAME }}","input_urls":"${{ env.INPUT_URL }}","pipeline":["resolve_dependencies:StaticResolver"],"execute_now":true}
       - name: POST project to Scancode.io API
         shell: bash
         run: |
