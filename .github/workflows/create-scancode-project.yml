@@ -36,23 +36,3 @@ jobs:
             {"Content-Type":"application/json","Authorization":"Token ${{ secrets.SCANCODEIO_API_KEY }}"}
           data: >-
             {"name":"${{ env.PROJECT_NAME }}","input_urls":"${{ env.INPUT_URL }}","pipeline":["resolve_dependencies:StaticResolver"],"execute_now":true}
-      - name: POST project to Scancode.io API
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Falls jq mal fehlen sollte, kurz installieren (ist i.d.R. bereits vorhanden):
-          if ! command -v jq >/dev/null 2>&1; then
-            sudo apt-get update -y
-            sudo apt-get install -y jq
-          fi
-
-          payload=$(jq -n \
-            --arg name "$PROJECT_NAME" \
-            --arg input "$INPUT_URL" \
-            --argjson pipeline '["resolve_dependencies:StaticResolver"]' \
-            '{name:$name, input_urls:$input, pipeline:$pipeline, execute_now:true}')
-
-          curl --fail --location "${API_BASE}/api/projects/" \
-            --header 'Content-Type: application/json' \
-            --header "Authorization: Token ${API_TOKEN}" \
-            --data "$payload"
