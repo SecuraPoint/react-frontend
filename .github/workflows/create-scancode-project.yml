@@ -1,9 +1,9 @@
 name: Scancode.io
 on:
   push:
-    tags:        
+    tags:
       - "v[0-9]+.[0-9]+.[0-9]+"
-jobs: 
+jobs:
   use-scancode-action:
     runs-on: ubuntu-latest
     env:
@@ -17,3 +17,40 @@ jobs:
           pipelines: "resolve_dependencies:StaticResolver"
           output-formats: "json xlsx spdx cyclonedx attribution"
           project-name: "${{ env.PROJECT_NAME }}"
+
+  create-remote-project:
+    name: Create Scancode.io project (API)
+    runs-on: ubuntu-latest
+    env:
+      API_BASE: ${{ secrets.SCANCODEIO_URL }}
+      PROJECT_NAME: "${{ github.event.repository.name }}-${{ github.ref_name }}"
+      INPUT_URL: "https://github.com/${{ github.repository }}.git"
+      API_TOKEN: ${{ secrets.SCANCODEIO_API_KEY }}
+    steps:
+      - name: POST project to Scancode.io API
+        uses: fjogeleit/http-request-action@v1
+        with:
+          url: "${API_BASE}/api/projects/"
+          method: "POST"
+          customHeaders: '{"Authorization": "Token ${API_TOKEN}"}'
+          data: '{"name": "${PROJECT_NAME}","input_urls": "${INPUT_URL}","pipeline": ["resolve_dependencies:StaticResolver"],"execute_now": true}'
+      - name: POST project to Scancode.io API
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Falls jq mal fehlen sollte, kurz installieren (ist i.d.R. bereits vorhanden):
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update -y
+            sudo apt-get install -y jq
+          fi
+
+          payload=$(jq -n \
+            --arg name "$PROJECT_NAME" \
+            --arg input "$INPUT_URL" \
+            --argjson pipeline '["resolve_dependencies:StaticResolver"]' \
+            '{name:$name, input_urls:$input, pipeline:$pipeline, execute_now:true}')
+
+          curl --fail --location "${API_BASE}/api/projects/" \
+            --header 'Content-Type: application/json' \
+            --header "Authorization: Token ${API_TOKEN}" \
+            --data "$payload"
