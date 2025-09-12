@@ -73,7 +73,7 @@ jobs:
           SCANCODEIO_TOKEN: ${{ secrets.SCANCODEIO_API_KEY }}
           SCANCODEIO_PROJECT_UUID: ${{ needs.create-remote-project.outputs.project_uuid }}
           POLL_INTERVAL_SEC: "10"
-          POLL_TIMEOUT_SEC: "30"
+          POLL_TIMEOUT_SEC: "1800"
         run: |
           set -euo pipefail
           chmod +x scripts/poll_scancodeio.py
