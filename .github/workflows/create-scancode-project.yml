@@ -1,8 +1,13 @@
-name: Scancode.io
+name: Scancode.io → DejaCode
+
 on:
   push:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: read
+
 jobs:
   use-scancode-action:
     runs-on: ubuntu-latest
@@ -19,20 +24,105 @@ jobs:
           project-name: "${{ env.PROJECT_NAME }}"
 
   create-remote-project:
-    name: Create Scancode.io project (API)
+    name: Create ScanCode.io project (API)
     runs-on: ubuntu-latest
     env:
       API_BASE: ${{ secrets.SCANCODEIO_URL }}
       PROJECT_NAME: "${{ github.event.repository.name }}-${{ github.ref_name }}"
       INPUT_URL: "https://github.com/${{ github.repository }}.git"
       API_TOKEN: ${{ secrets.SCANCODEIO_API_KEY }}
+    outputs:
+      project_uuid: ${{ steps.parse_uuid.outputs.project_uuid }}
     steps:
-      - name: POST project to Scancode.io API
+      - name: POST project to ScanCode.io API
+        id: create_project
         uses: fjogeleit/http-request-action@v1
         with:
           url: ${{ format('{0}/api/projects/', env.API_BASE) }}
           method: 'POST'
           customHeaders: >-
-            {"Content-Type":"application/json","Authorization":"Token ${{ secrets.SCANCODEIO_API_KEY }}"}
+            {"Content-Type":"application/json","Authorization":"Token ${{ env.API_TOKEN }}"}
           data: >-
             {"name":"${{ env.PROJECT_NAME }}","input_urls":"${{ env.INPUT_URL }}","pipeline":["resolve_dependencies:StaticResolver"],"execute_now":true}
+
+      - name: Extract project UUID
+        id: parse_uuid
+        run: |
+          set -euo pipefail
+          body='${{ steps.create_project.outputs.response }}'
+          echo "$body" | jq -e -r '.uuid' | tee uuid.txt
+          echo "project_uuid=$(cat uuid.txt)" >> "$GITHUB_OUTPUT"
+        shell: bash
+
+  wait-for-scancodeio:
+    name: Wait for ScanCode.io run to succeed
+    runs-on: ubuntu-latest
+    needs: create-remote-project
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install --disable-pip-version-check --no-input requests
+      - name: Poll ScanCode.io project
+        id: poll
+        env:
+          SCANCODEIO_BASE: ${{ secrets.SCANCODEIO_URL }}
+          SCANCODEIO_TOKEN: ${{ secrets.SCANCODEIO_API_KEY }}
+          SCANCODEIO_PROJECT_UUID: ${{ needs.create-remote-project.outputs.project_uuid }}
+          POLL_INTERVAL_SEC: "10"
+          POLL_TIMEOUT_SEC: "30"
+        run: |
+          set -euo pipefail
+          chmod +x scripts/poll_scancodeio.py
+          scripts/poll_scancodeio.py
+        shell: bash
+
+  create-dejacode-product:
+    name: Create DejaCode product
+    runs-on: ubuntu-latest
+    needs: [wait-for-scancodeio]
+    outputs:
+      product_uuid: ${{ steps.create.outputs.product_uuid }}
+    env:
+      DEJACODE_BASE: ${{ secrets.DEJACODE_URL }}
+      DEJACODE_TOKEN: ${{ secrets.DEJACODE_API_KEY }}
+    steps:
+      - name: Create product
+        id: create
+        env:
+          PROD_NAME: ${{ github.event.repository.name }}
+          PROD_VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          body=$(jq -n --arg name "$PROD_NAME" --arg version "$PROD_VERSION" '{name:$name, version:$version}')
+          curl --fail --show-error -sS \
+            -H "Authorization: Token $DEJACODE_TOKEN" \
+            -H "Content-Type: application/json" \
+            -X POST "$DEJACODE_BASE/api/v2/products/" \
+            -d "$body" | tee product.json
+          echo "product_uuid=$(jq -r '.uuid' product.json)" >> "$GITHUB_OUTPUT"
+        shell: bash
+
+  import-scancode-data:
+    name: Import ScanCode.io data into DejaCode
+    runs-on: ubuntu-latest
+    needs: [create-dejacode-product, create-remote-project]
+    env:
+      DEJACODE_BASE: ${{ secrets.DEJACODE_URL }}
+      DEJACODE_TOKEN: ${{ secrets.DEJACODE_API_KEY }}
+      PRODUCT_UUID: ${{ needs.create-dejacode-product.outputs.product_uuid }}
+      PROJECT_UUID: ${{ needs.create-remote-project.outputs.project_uuid }}
+    steps:
+      - name: Trigger import
+        run: |
+          set -euo pipefail
+          curl --fail --show-error -sS \
+            -H "Authorization: Token $DEJACODE_TOKEN" \
+            -X POST \
+            -F project_name_or_uuid="$PROJECT_UUID" \
+            "$DEJACODE_BASE/api/v2/products/$PRODUCT_UUID/pull_scancodeio_project_data/" \
+            | jq -r .
+        shell: bash
