@@ -1,7 +1,7 @@
 {
   "name": "securapoint-react-frontend",
   "private": false,
-  "version": "1.1.1",
+  "version": "1.1.7",
   "type": "module",
   "license": "(MIT OR Apache-2.0)",
   "author": {
