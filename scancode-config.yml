@@ -2,7 +2,7 @@ policies:
 product_name:
 product_version:
 ignored_patterns:
-  - '.git/*'
+  - 'react-frontend.git/.git/*'
   - 'scan-results/files-sbom-cyclonedx.json'
   - 'react-frontend.git/scan-results/syft.json'
 scan_max_file_size:
