@@ -1,8 +1,18 @@
 {
-  "name": "my-app",
-  "private": true,
-  "version": "0.0.0",
+  "name": "securapoint-react-frontend",
+  "private": false,
+  "version": "1.1.1",
   "type": "module",
+  "license": "(MIT OR Apache-2.0)",
+  "author": {
+    "email": "info@securapoint.de",
+    "name": "Marco Berger",
+    "url": "https://www.securapoint.de"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SecuraPoint/react-frontend"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
