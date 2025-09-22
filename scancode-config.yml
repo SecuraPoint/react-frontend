@@ -3,8 +3,7 @@ product_name:
 product_version:
 ignored_patterns:
   - 'react-frontend.git/.git/*'
-  - 'scan-results/files-sbom-cyclonedx.json'
-  - 'react-frontend.git/scan-results/syft.json'
+  - 'react-frontend.git/scan-results/*'
 scan_max_file_size:
 attribution_template:
 ignored_vulnerabilities:
