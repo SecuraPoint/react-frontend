@@ -1,2 +1,2 @@
 ignored_patterns:
-  - .git/*
+  - '.git/*'
