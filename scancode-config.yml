@@ -2,7 +2,7 @@ policies:
 product_name:
 product_version:
 ignored_patterns:
-  - .git/*
+  - '.git/*'
 scan_max_file_size:
 attribution_template:
 ignored_vulnerabilities:
