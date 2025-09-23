@@ -8,6 +8,10 @@ jobs:
   build-and-analyse:
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: read
+      packages: write
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -15,6 +19,10 @@ jobs:
       - name: Extract commit SHA
         id: vars
         run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      # QEMU for Cross-Builds (ARM <-> AMD)
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -25,14 +33,18 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push Docker image (latest + commit hash)
+      - name: Build and push multi-arch image (latest + commit hash)
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
+          platforms: linux/amd64,linux/arm64
           tags: |
             securapoint/react-frontend:latest
             securapoint/react-frontend:${{ steps.vars.outputs.sha_short }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false  # optional, makes sure there are no SBOM/Attestation conflicts with future steps
 
       - name: Generate image SBOM and upload artifact
         uses: anchore/sbom-action@v0
