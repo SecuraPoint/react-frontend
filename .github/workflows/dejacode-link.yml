@@ -373,9 +373,14 @@ jobs:
         env:
           SCANCODEIO_BASE: ${{ secrets.SCANCODEIO_URL }}
           SCANCODEIO_TOKEN: ${{ secrets.SCANCODEIO_API_KEY }}
-          PROJECT_UUID: ${{ needs.create-scancode-from-sbom.outputs.project_uuid }}
+          SCANCODEIO_PROJECT_UUID: ${{ needs.create-scancode-from-sbom.outputs.project_uuid }}
+          POLL_INTERVAL_SEC: "10"
+          POLL_TIMEOUT_SEC: "1800"
         run: |
-          python scripts/poll_scancodeio.py
+          set -euo pipefail
+          chmod +x scripts/poll_scancodeio.py
+          scripts/poll_scancodeio.py
+        shell: bash
 
   # --- ScanCode.io → DejaCode importieren ----------------------------------
   import-scancode-data:
