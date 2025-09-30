@@ -270,7 +270,6 @@ jobs:
           pipelines: "resolve_dependencies:StaticResolver"
           output-formats: "spdx cyclonedx"
           project-name: "${{ env.PROJECT_NAME }}"
-          upload-outputs-archive: false
 
       - name: Locate SBOM files
         id: locate
