@@ -17,7 +17,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: scancode-inputs
+
+      # Pin dependency version as workaround for issue with click: https://github.com/aboutcode-org/scancode-toolkit/issues/4572?utm_source=chatgpt.com
+      - name: Create pip constraints
+        run: echo 'click==8.2.1' > $GITHUB_WORKSPACE/pip-constraints.txt
       - uses: aboutcode-org/scancode-action@beta
+        env:
+          PIP_CONSTRAINT: ${{ github.workspace }}/pip-constraints.txt
         with:
           pipelines: "resolve_dependencies:StaticResolver"
           output-formats: "json xlsx spdx cyclonedx attribution"
