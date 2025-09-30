@@ -276,11 +276,32 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ROOT="${GITHUB_WORKSPACE}/scancode-outputs"
-          SPDX="$(find "$ROOT" -type f -iname '*spdx*.json' | head -n1 || true)"
-          CDX="$(find "$ROOT" -type f -iname '*cyclonedx*.json' | head -n1 || true)"
-          echo "spdx_path=$SPDX" >> "$GITHUB_OUTPUT"
-          echo "cdx_path=$CDX" >> "$GITHUB_OUTPUT"
+          PRIMARY="${PROJECT_WORK_DIRECTORY:-}/output"
+          FALLBACK="${GITHUB_WORKSPACE}/scancode-outputs"
+
+          search_dir=""
+          if [ -d "$PRIMARY" ]; then
+            search_dir="$PRIMARY"
+          elif [ -d "$FALLBACK" ]; then
+            search_dir="$FALLBACK"
+          else
+            echo "No expected output dir found."
+            echo "Tried PRIMARY=$PRIMARY and FALLBACK=$FALLBACK"
+            echo "Workspace tree:"
+            find "${GITHUB_WORKSPACE}" -maxdepth 4 -type d -print
+            exit 1
+          fi
+
+          echo "Searching SBOMs in: $search_dir"
+
+          SPDX="$(find "$search_dir" -type f -iname '*spdx*.json' | head -n1 || true)"
+          CDX="$(find "$search_dir" -type f -iname '*cdx*.json' -o -iname '*cyclonedx*.json' | head -n1 || true)"
+
+          echo "Found SPDX: ${SPDX:-<none>}"
+          echo "Found CDX:  ${CDX:-<none>}"
+
+          echo "spdx_path=${SPDX:-}" >> "$GITHUB_OUTPUT"
+          echo "cdx_path=${CDX:-}"  >> "$GITHUB_OUTPUT"
 
   # --- ScanCode.io-Projekt aus SBOM ----------------------------------------
   create-scancode-from-sbom:
