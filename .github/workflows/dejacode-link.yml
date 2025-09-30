@@ -28,7 +28,7 @@ jobs:
           REPO_FULL="${{ github.repository }}"
           ORG="${REPO_FULL%%/*}"
           REPO="${REPO_FULL##*/}"
-          TAG="${{ github.ref_name }}"
+          TAG="${{ github.ref_name }}-link"
 
           # Name/Version für Component/Product ableiten
           # Name = Repo-Name, Version = Git-Tag (unverändert, inkl. evtl. 'v' Prefix)
