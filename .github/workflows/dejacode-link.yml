@@ -17,7 +17,8 @@ jobs:
   dejacode-objects:
     name: Create & Link DejaCode Objects
     runs-on: ubuntu-latest
-
+    outputs:
+      product_uuid: ${{ steps.create_product.outputs.product_uuid }}
     steps:
       - name: Install jq (JSON parsing)
         run: sudo apt-get update -y && sudo apt-get install -y jq
@@ -147,43 +148,25 @@ jobs:
           NAME: ${{ steps.prep.outputs.name }}
           VERSION: ${{ steps.prep.outputs.version }}
         run: |
-          set -Eeuo pipefail
+          set -euo pipefail
           BODY="$(jq -n --arg n "$NAME" --arg v "$VERSION" '{name:$n, version:$v}')"
-          HTTP_CODE="$(curl -sS -o resp.json -w "%{http_code}" \
+          RESP="$(curl -sS -w '\n' \
             -H "Authorization: Token $DEJACODE_TOKEN" \
             -H "Content-Type: application/json" \
             -d "$BODY" \
-            -X POST "$DEJACODE_BASE/api/v2/products/")" || true
-          if [ "$HTTP_CODE" = "201" ]; then
-            cat resp.json | jq -r .
-            PROD_UUID="$(jq -r '.uuid' resp.json)"
-            PROD_API="$(jq -r '.api_url' resp.json)"
-            echo "product_uuid=$PROD_UUID" >> "$GITHUB_OUTPUT"
-            echo "product_api_url=$PROD_API" >> "$GITHUB_OUTPUT"
+            -X POST "$DEJACODE_BASE/api/v2/products/" || true)"
+          if echo "$RESP" | jq -e '.uuid' >/dev/null 2>&1; then
+            echo "$RESP" | jq -r .
+            echo "product_uuid=$(echo "$RESP" | jq -r '.uuid')" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if [ "$HTTP_CODE" = "400" ]; then
-            echo "Product likely exists. Searching…"
-            Q_NAME="$(printf '%s' "$NAME" | jq -sRr @uri)"
-            Q_VER="$(printf '%s' "$VERSION" | jq -sRr @uri)"
-            Q_URL="$DEJACODE_BASE/api/v2/products/?name=$Q_NAME&version=$Q_VER"
-            RESP="$(curl -sS --fail -H "Authorization: Token $DEJACODE_TOKEN" "$Q_URL")"
-            COUNT="$(jq -r '.count' <<<"$RESP")"
-            if [ "$COUNT" = "0" ]; then
-              echo "ERROR: Product creation failed and no existing match found."
-              cat resp.json | jq -r .
-              exit 1
-            fi
-            PROD_UUID="$(jq -r '.results[0].uuid' <<<"$RESP")"
-            PROD_API="$(jq -r '.results[0].api_url' <<<"$RESP")"
-            echo "product_uuid=$PROD_UUID" >> "$GITHUB_OUTPUT"
-            echo "product_api_url=$PROD_API" >> "$GITHUB_OUTPUT"
-            echo "Reused existing product: $PROD_API"
-            exit 0
-          fi
-          echo "ERROR: Unexpected HTTP code while creating product: $HTTP_CODE"
-          cat resp.json || true
-          exit 1
+          # fallback: exists already
+          Q_NAME="$(printf '%s' "$NAME" | jq -sRr @uri)"
+          Q_VER="$(printf '%s' "$VERSION" | jq -sRr @uri)"
+          RESP="$(curl -sS -H "Authorization: Token $DEJACODE_TOKEN" \
+            "$DEJACODE_BASE/api/v2/products/?name=$Q_NAME&version=$Q_VER")"
+          echo "$RESP" | jq -r .
+          echo "product_uuid=$(echo "$RESP" | jq -r '.results[0].uuid')" >> "$GITHUB_OUTPUT"
 
       ##################################################################
       # 4) Patch Component with Package
@@ -240,3 +223,137 @@ jobs:
 
           echo "ERROR: Failed to link component to product."
           exit 1
+
+  # --- SBOM bauen (SPDX JSON) ----------------------------------------------
+  build-sbom:
+    name: Build SPDX SBOM
+    runs-on: ubuntu-latest
+    needs: [dejacode-objects]
+    permissions:
+      contents: read
+    env:
+      PROJECT_NAME: "${{ github.event.repository.name }}-${{ github.ref_name }}"
+    outputs:
+      spdx_path: ${{ steps.locate.outputs.spdx_path }}
+      cdx_path: ${{ steps.locate.outputs.cdx_path }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: scancode-inputs
+
+      - name: Create pip constraints
+        run: echo 'click==8.2.1' > $GITHUB_WORKSPACE/pip-constraints.txt
+
+      - name: Run scancode-action
+        uses: aboutcode-org/scancode-action@beta
+        env:
+          PIP_CONSTRAINT: ${{ github.workspace }}/pip-constraints.txt
+        with:
+          pipelines: "resolve_dependencies:StaticResolver"
+          output-formats: "spdx cyclonedx"
+          project-name: "${{ env.PROJECT_NAME }}"
+          upload-outputs-archive: false
+
+      - name: Locate SBOM files
+        id: locate
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="${GITHUB_WORKSPACE}/scancode-outputs"
+          SPDX="$(find "$ROOT" -type f -iname '*spdx*.json' | head -n1 || true)"
+          CDX="$(find "$ROOT" -type f -iname '*cyclonedx*.json' | head -n1 || true)"
+          echo "spdx_path=$SPDX" >> "$GITHUB_OUTPUT"
+          echo "cdx_path=$CDX" >> "$GITHUB_OUTPUT"
+
+  # --- ScanCode.io-Projekt aus SBOM ----------------------------------------
+  create-scancode-from-sbom:
+    name: Create ScanCode.io project from SBOM
+    runs-on: ubuntu-latest
+    needs: [build-sbom]
+    outputs:
+      project_uuid: ${{ steps.parse_uuid.outputs.project_uuid }}
+    env:
+      SCANCODEIO_BASE: ${{ secrets.SCANCODEIO_URL }}
+      SCANCODEIO_TOKEN: ${{ secrets.SCANCODEIO_API_KEY }}
+    steps:
+      - name: Install jq
+        run: sudo apt-get update -y && sudo apt-get install -y jq
+
+      - name: Pick SBOM path
+        id: pick
+        run: |
+          SBOM="${{ needs.build-sbom.outputs.spdx_path }}"
+          if [ -z "$SBOM" ]; then SBOM="${{ needs.build-sbom.outputs.cdx_path }}"; fi
+          [ -n "$SBOM" ] || { echo "No SBOM file"; exit 1; }
+          echo "sbom_path=$SBOM" >> "$GITHUB_OUTPUT"
+
+      - name: Create project
+        id: create_project
+        run: |
+          body=$(jq -n --arg n "${{ github.event.repository.name }}-${{ github.ref_name }}" \
+                      '{name:$n, pipeline:["load_sbom"]}')
+          curl -sS --fail \
+            -H "Authorization: Token $SCANCODEIO_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$body" \
+            -X POST "$SCANCODEIO_BASE/api/projects/" | jq -r . > resp.json
+
+      - name: Extract project UUID
+        id: parse_uuid
+        run: echo "project_uuid=$(jq -r '.uuid' resp.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload SBOM
+        run: |
+          curl -sS --fail \
+            -H "Authorization: Token $SCANCODEIO_TOKEN" \
+            -F "input_file=@${{ steps.pick.outputs.sbom_path }}" \
+            -X POST "$SCANCODEIO_BASE/api/projects/${{ steps.parse_uuid.outputs.project_uuid }}/add_inputs/" \
+            | jq -r .
+
+      - name: Trigger pipeline run
+        run: |
+          jq -n --arg p "load_sbom" '{pipeline:$p}' > body.json
+          curl -sS --fail \
+            -H "Authorization: Token $SCANCODEIO_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d @body.json \
+            -X POST "$SCANCODEIO_BASE/api/projects/${{ steps.parse_uuid.outputs.project_uuid }}/runs/" \
+            | jq -r .
+
+  # --- Auf ScanCode.io warten ----------------------------------------------
+  wait-for-scancodeio:
+    name: Wait for ScanCode.io run
+    runs-on: ubuntu-latest
+    needs: [create-scancode-from-sbom]
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests
+      - name: Poll ScanCode.io
+        env:
+          SCANCODEIO_BASE: ${{ secrets.SCANCODEIO_URL }}
+          SCANCODEIO_TOKEN: ${{ secrets.SCANCODEIO_API_KEY }}
+          PROJECT_UUID: ${{ needs.create-scancode-from-sbom.outputs.project_uuid }}
+        run: |
+          python scripts/poll_scancodeio.py
+
+  # --- ScanCode.io → DejaCode importieren ----------------------------------
+  import-scancode-data:
+    name: Import ScanCode.io data into DejaCode
+    runs-on: ubuntu-latest
+    needs: [wait-for-scancodeio, dejacode-objects, create-scancode-from-sbom]
+    env:
+      DEJACODE_BASE: ${{ secrets.DEJACODE_URL }}
+      DEJACODE_TOKEN: ${{ secrets.DEJACODE_API_KEY }}
+      PRODUCT_UUID: ${{ needs.dejacode-objects.outputs.product_uuid }}
+      PROJECT_UUID: ${{ needs.create-scancode-from-sbom.outputs.project_uuid }}
+    steps:
+      - name: Trigger import
+        run: |
+          curl -sS --fail \
+            -H "Authorization: Token $DEJACODE_TOKEN" \
+            -X POST \
+            -F project_name_or_uuid="$PROJECT_UUID" \
+            "$DEJACODE_BASE/api/v2/products/$PRODUCT_UUID/pull_scancodeio_project_data/" \
+            | jq -r .
