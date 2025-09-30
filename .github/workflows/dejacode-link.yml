@@ -19,7 +19,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Prepare variables
+      - name: Install jq (JSON parsing)
+        run: sudo apt-get update -y && sudo apt-get install -y jq
+
+      - name: Prepare variables (repo/org/tag + URL-encoding via jq)
         id: prep
         shell: bash
         run: |
@@ -30,19 +33,16 @@ jobs:
           REPO="${REPO_FULL##*/}"
           TAG="${{ github.ref_name }}"
 
-          # Name/Version für Component/Product ableiten
-          # Name = Repo-Name, Version = Git-Tag (unverändert, inkl. evtl. 'v' Prefix)
+          # Name/Version für Component/Product
           NAME="$REPO"
           VERSION="$TAG"
 
           # Download-URL für das Tag-Tarball
           DOWNLOAD_URL="https://github.com/${ORG}/${REPO}/archive/refs/tags/${TAG}.tar.gz"
-          # URL-encoded für GET Query
-          ENCODED_DL_URL="$(python3 - << 'PY'
-import urllib.parse, os
-print(urllib.parse.quote(os.environ["DOWNLOAD_URL"], safe=""))
-PY
-)"
+
+          # URL-encoded für GET Query (jq @uri)
+          ENCODED_DL_URL="$(printf '%s' "$DOWNLOAD_URL" | jq -sRr @uri)"
+
           {
             echo "org=$ORG"
             echo "repo=$REPO"
@@ -52,9 +52,6 @@ PY
             echo "download_url=$DOWNLOAD_URL"
             echo "encoded_download_url=$ENCODED_DL_URL"
           } >> "$GITHUB_OUTPUT"
-
-      - name: Install jq (JSON parsing)
-        run: sudo apt-get update -y && sudo apt-get install -y jq
 
       ##################################################################
       # 1) Add DejaCode Package + lookup api_url
@@ -66,8 +63,6 @@ PY
           DL: ${{ steps.prep.outputs.download_url }}
         run: |
           set -euo pipefail
-          # POST multipart/form-data to /packages/add/
-          # Erfolgsfälle: 200 mit {"added": ["download_url"]} oder {"failed": ["download_url"]} (falls schon vorhanden)
           RESP="$(curl -sS --fail \
             -H "Authorization: Token $DEJACODE_TOKEN" \
             -F "download_url=${DL}" \
@@ -75,7 +70,7 @@ PY
               echo "ERROR: Package add failed"
               exit 1
             }
-          echo "Add response: $RESP" | jq -r .
+          echo "Add response:"; echo "$RESP" | jq -r .
 
       - name: Resolve Package api_url
         id: pkg_lookup
@@ -110,7 +105,6 @@ PY
         run: |
           set -Eeuo pipefail
           BODY="$(jq -n --arg n "$NAME" --arg v "$VERSION" '{name:$n, version:$v}')"
-          # 201 Created -> OK; 400 -> existiert vermutlich schon
           HTTP_CODE="$(curl -sS -o resp.json -w "%{http_code}" \
             -H "Authorization: Token $DEJACODE_TOKEN" \
             -H "Content-Type: application/json" \
@@ -126,16 +120,9 @@ PY
           fi
           if [ "$HTTP_CODE" = "400" ]; then
             echo "Component likely exists. Searching…"
-            # Suche per Name + Version
-            Q_URL="$DEJACODE_BASE/api/v2/components/?name=$(python3 - <<PY
-import urllib.parse, os
-print(urllib.parse.quote(os.environ["NAME"], safe=""))
-PY
-)&version=$(python3 - <<PY
-import urllib.parse, os
-print(urllib.parse.quote(os.environ["VERSION"], safe=""))
-PY
-)"
+            Q_NAME="$(printf '%s' "$NAME" | jq -sRr @uri)"
+            Q_VER="$(printf '%s' "$VERSION" | jq -sRr @uri)"
+            Q_URL="$DEJACODE_BASE/api/v2/components/?name=$Q_NAME&version=$Q_VER"
             RESP="$(curl -sS --fail -H "Authorization: Token $DEJACODE_TOKEN" "$Q_URL")"
             COUNT="$(jq -r '.count' <<<"$RESP")"
             if [ "$COUNT" = "0" ]; then
@@ -181,15 +168,9 @@ PY
           fi
           if [ "$HTTP_CODE" = "400" ]; then
             echo "Product likely exists. Searching…"
-            Q_URL="$DEJACODE_BASE/api/v2/products/?name=$(python3 - <<PY
-import urllib.parse, os
-print(urllib.parse.quote(os.environ["NAME"], safe=""))
-PY
-)&version=$(python3 - <<PY
-import urllib.parse, os
-print(urllib.parse.quote(os.environ["VERSION"], safe=""))
-PY
-)"
+            Q_NAME="$(printf '%s' "$NAME" | jq -sRr @uri)"
+            Q_VER="$(printf '%s' "$VERSION" | jq -sRr @uri)"
+            Q_URL="$DEJACODE_BASE/api/v2/products/?name=$Q_NAME&version=$Q_VER"
             RESP="$(curl -sS --fail -H "Authorization: Token $DEJACODE_TOKEN" "$Q_URL")"
             COUNT="$(jq -r '.count' <<<"$RESP")"
             if [ "$COUNT" = "0" ]; then
@@ -236,7 +217,7 @@ PY
       #    Primär: POST /api/v2/productcomponents/ (through model)
       #    Fallback: PATCH Product.components mit UUID-Liste
       ##################################################################
-      - name: Add Component to Product (primary productcomponents)
+      - name: Add Component to Product (primary -> productcomponents)
         id: add_component_primary
         shell: bash
         continue-on-error: true
@@ -247,7 +228,6 @@ PY
           set -euo pipefail
           [ -n "$COMP_UUID" ] && [ -n "$PROD_UUID" ] || { echo "Missing UUIDs"; exit 1; }
           BODY="$(jq -n --arg c "$COMP_UUID" --arg p "$PROD_UUID" '{component: $c, product: $p}')"
-          # Erfolgreich: 201 Created; Bereits vorhanden: 400 Bad Request (duplicate)
           HTTP_CODE="$(curl -sS -o resp.json -w "%{http_code}" \
             -H "Authorization: Token $DEJACODE_TOKEN" \
             -H "Content-Type: application/json" \
@@ -261,7 +241,7 @@ PY
           fi
           exit 1
 
-      - name: Add Component to Product (fallback PATCH product.components)
+      - name: Add Component to Product (fallback -> PATCH product.components)
         if: steps.add_component_primary.outputs.primary_ok != 'true'
         shell: bash
         env:
@@ -269,22 +249,19 @@ PY
           COMP_UUID: ${{ steps.create_component.outputs.component_uuid }}
         run: |
           set -euo pipefail
-          # Bestehende Komponenten holen, neue UUID hinzufügen und zurückpatchen
           PROD_JSON="$(curl -sS --fail -H "Authorization: Token $DEJACODE_TOKEN" "$PROD_API")"
-          # Extrahiere existierende Component-UUIDs (falls Feld leer: mache leeres Array)
-          EXIST="$(jq -r '.components // [] | .[]?.uuid' <<<"$PROD_JSON" || true)"
+          # Extrahiere existierende Component-UUIDs
+          EXISTING="$(jq -r '.components // [] | .[]?.uuid' <<<"$PROD_JSON" || true)"
           TMP="$(mktemp)"
           jq -n '[]' > "$TMP"
-          if [ -n "$EXIST" ]; then
+          if [ -n "$EXISTING" ]; then
             while read -r U; do
               jq --arg u "$U" '. + [$u]' "$TMP" > "$TMP.next" && mv "$TMP.next" "$TMP"
-            done <<< "$EXIST"
+            done <<< "$EXISTING"
           fi
-          # Nur hinzufügen, wenn nicht bereits vorhanden
           if ! jq -e --arg u "$COMP_UUID" 'index($u)' "$TMP" >/dev/null; then
             jq --arg u "$COMP_UUID" '. + [$u]' "$TMP" > "$TMP.next" && mv "$TMP.next" "$TMP"
           fi
-          # PATCH am Product: components = [uuid, ...]
           BODY="$(jq -n --slurpfile uu "$TMP" '{components: $uu[0]}')"
           curl -sS --fail \
             -H "Authorization: Token $DEJACODE_TOKEN" \
