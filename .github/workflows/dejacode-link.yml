@@ -313,6 +313,7 @@ jobs:
     env:
       SCANCODEIO_BASE: ${{ secrets.SCANCODEIO_URL }}
       SCANCODEIO_TOKEN: ${{ secrets.SCANCODEIO_API_KEY }}
+      PROJECT_NAME: "${{ github.event.repository.name }}-${{ github.ref_name }}"
     steps:
       - name: Install jq
         run: sudo apt-get update -y && sudo apt-get install -y jq
@@ -325,38 +326,52 @@ jobs:
           [ -n "$SBOM" ] || { echo "No SBOM file"; exit 1; }
           echo "sbom_path=$SBOM" >> "$GITHUB_OUTPUT"
 
-      - name: Create project
-        id: create_project
-        run: |
-          body=$(jq -n --arg n "${{ github.event.repository.name }}-${{ github.ref_name }}" \
-                      '{name:$n, pipeline:["load_sbom"], execute_now:true}')
-          curl -sS --fail \
-            -H "Authorization: Token $SCANCODEIO_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "$body" \
-            -X POST "$SCANCODEIO_BASE/api/projects/" | jq -r . > resp.json
+      - name: ScanCode.io create project + upload SBOM + run (one request)
+        id: scio
+        uses: fjogeleit/http-request-action@v1
+        with:
+          url: ${{ format('{0}/api/projects/', env.SCANCODEIO_BASE) }}
+          method: 'POST'
+          customHeaders: >-
+            {"Authorization":"Token ${{ env.SCANCODEIO_TOKEN }}"}
+          files: >-
+            {"upload_file":"${{ steps.pick.outputs.sbom_path }}"}
+          data: >-
+            {"name":"${{ env.PROJECT_NAME }}","pipeline":"load_sbom","execute_now":true}
+
+
+      # - name: Create project
+      #   id: create_project
+      #   run: |
+      #     body=$(jq -n --arg n "${{ github.event.repository.name }}-${{ github.ref_name }}" \
+      #                 '{name:$n, pipeline:["load_sbom"], execute_now:true}')
+      #     curl -sS --fail \
+      #       -H "Authorization: Token $SCANCODEIO_TOKEN" \
+      #       -H "Content-Type: application/json" \
+      #       -d "$body" \
+      #       -X POST "$SCANCODEIO_BASE/api/projects/" | jq -r . > resp.json
 
       - name: Extract project UUID
         id: parse_uuid
         run: echo "project_uuid=$(jq -r '.uuid' resp.json)" >> "$GITHUB_OUTPUT"
 
-      - name: Upload SBOM
-        run: |
-          curl -sS --fail \
-            -H "Authorization: Token $SCANCODEIO_TOKEN" \
-            -F "input_file=@${{ steps.pick.outputs.sbom_path }}" \
-            -X POST "$SCANCODEIO_BASE/api/projects/${{ steps.parse_uuid.outputs.project_uuid }}/add_inputs/" \
-            | jq -r .
+      # - name: Upload SBOM
+      #   run: |
+      #     curl -sS --fail \
+      #       -H "Authorization: Token $SCANCODEIO_TOKEN" \
+      #       -F "input_file=@${{ steps.pick.outputs.sbom_path }}" \
+      #       -X POST "$SCANCODEIO_BASE/api/projects/${{ steps.parse_uuid.outputs.project_uuid }}/add_inputs/" \
+      #       | jq -r .
 
-      - name: Trigger pipeline run
-        run: |
-          jq -n --arg p "load_sbom" '{pipeline:$p}' > body.json
-          curl -sS --fail \
-            -H "Authorization: Token $SCANCODEIO_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d @body.json \
-            -X POST "$SCANCODEIO_BASE/api/projects/${{ steps.parse_uuid.outputs.project_uuid }}/runs/" \
-            | jq -r .
+      # - name: Trigger pipeline run
+      #   run: |
+      #     jq -n --arg p "load_sbom" '{pipeline:$p}' > body.json
+      #     curl -sS --fail \
+      #       -H "Authorization: Token $SCANCODEIO_TOKEN" \
+      #       -H "Content-Type: application/json" \
+      #       -d @body.json \
+      #       -X POST "$SCANCODEIO_BASE/api/projects/${{ steps.parse_uuid.outputs.project_uuid }}/runs/" \
+      #       | jq -r .
 
   # --- Auf ScanCode.io warten ----------------------------------------------
   wait-for-scancodeio:
