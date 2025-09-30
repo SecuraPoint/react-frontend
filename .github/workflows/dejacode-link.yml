@@ -244,16 +244,17 @@ jobs:
 
   # --- SBOM bauen (SPDX JSON) ----------------------------------------------
   build-sbom:
-    name: Build SPDX SBOM
+    name: Build SPDX SBOM + create ScanCode.io project (one HTTP step)
     runs-on: ubuntu-latest
     needs: [dejacode-objects]
     permissions:
       contents: read
     env:
       PROJECT_NAME: "${{ github.event.repository.name }}-${{ github.ref_name }}"
+      SCANCODEIO_BASE: ${{ secrets.SCANCODEIO_URL }}
+      SCANCODEIO_TOKEN: ${{ secrets.SCANCODEIO_API_KEY }}
     outputs:
-      spdx_path: ${{ steps.locate.outputs.spdx_path }}
-      cdx_path: ${{ steps.locate.outputs.cdx_path }}
+      project_uuid: ${{ fromJson(steps.scio.outputs.response).uuid }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -262,7 +263,7 @@ jobs:
       - name: Create pip constraints
         run: echo 'click==8.2.1' > $GITHUB_WORKSPACE/pip-constraints.txt
 
-      - name: Run scancode-action
+      - name: Run scancode-action (SBOM only)
         uses: aboutcode-org/scancode-action@beta
         env:
           PIP_CONSTRAINT: ${{ github.workspace }}/pip-constraints.txt
@@ -278,52 +279,25 @@ jobs:
           set -euo pipefail
           PRIMARY="${PROJECT_WORK_DIRECTORY:-}/output"
           FALLBACK="${GITHUB_WORKSPACE}/scancode-outputs"
-
           search_dir=""
-          if [ -d "$PRIMARY" ]; then
-            search_dir="$PRIMARY"
-          elif [ -d "$FALLBACK" ]; then
-            search_dir="$FALLBACK"
+          if [ -d "$PRIMARY" ]; then search_dir="$PRIMARY";
+          elif [ -d "$FALLBACK" ]; then search_dir="$FALLBACK";
           else
-            echo "No expected output dir found."
-            echo "Tried PRIMARY=$PRIMARY and FALLBACK=$FALLBACK"
-            echo "Workspace tree:"
-            find "${GITHUB_WORKSPACE}" -maxdepth 4 -type d -print
-            exit 1
+            echo "No expected output dir found."; exit 1;
           fi
-
-          echo "Searching SBOMs in: $search_dir"
-
           SPDX="$(find "$search_dir" -type f -iname '*spdx*.json' | head -n1 || true)"
           CDX="$(find "$search_dir" -type f -iname '*cdx*.json' -o -iname '*cyclonedx*.json' | head -n1 || true)"
-
-          echo "Found SPDX: ${SPDX:-<none>}"
-          echo "Found CDX:  ${CDX:-<none>}"
-
           echo "spdx_path=${SPDX:-}" >> "$GITHUB_OUTPUT"
           echo "cdx_path=${CDX:-}"  >> "$GITHUB_OUTPUT"
 
-  # --- ScanCode.io-Projekt aus SBOM ----------------------------------------
-  create-scancode-from-sbom:
-    name: Create ScanCode.io project from SBOM
-    runs-on: ubuntu-latest
-    needs: [build-sbom]
-    outputs:
-      project_uuid: ${{ steps.parse_uuid.outputs.project_uuid }}
-    env:
-      SCANCODEIO_BASE: ${{ secrets.SCANCODEIO_URL }}
-      SCANCODEIO_TOKEN: ${{ secrets.SCANCODEIO_API_KEY }}
-      PROJECT_NAME: "${{ github.event.repository.name }}-${{ github.ref_name }}"
-    steps:
-      - name: Install jq
-        run: sudo apt-get update -y && sudo apt-get install -y jq
-
-      - name: Pick SBOM path
+      - name: Pick SBOM path (prefer SPDX)
         id: pick
+        shell: bash
         run: |
-          SBOM="${{ needs.build-sbom.outputs.spdx_path }}"
-          if [ -z "$SBOM" ]; then SBOM="${{ needs.build-sbom.outputs.cdx_path }}"; fi
-          [ -n "$SBOM" ] || { echo "No SBOM file"; exit 1; }
+          set -euo pipefail
+          SBOM="${{ steps.locate.outputs.spdx_path }}"
+          if [ -z "$SBOM" ]; then SBOM="${{ steps.locate.outputs.cdx_path }}"; fi
+          [ -s "$SBOM" ] || { echo "SBOM not found"; exit 1; }
           echo "sbom_path=$SBOM" >> "$GITHUB_OUTPUT"
 
       - name: ScanCode.io create project + upload SBOM + run (one request)
@@ -338,21 +312,13 @@ jobs:
             {"upload_file":"${{ steps.pick.outputs.sbom_path }}"}
           data: >-
             {"name":"${{ env.PROJECT_NAME }}","pipeline":"load_sbom","execute_now":true}
-
-      - name: Extract project UUID
-        id: parse_uuid
-        run: |
-          set -euo pipefail
-          body='${{ steps.scio.outputs.response }}'
-          echo "$body" | jq -e -r '.uuid' | tee uuid.txt
-          echo "project_uuid=$(cat uuid.txt)" >> "$GITHUB_OUTPUT"
-        shell: bash
+          timeout: 20000
 
   # --- Auf ScanCode.io warten ----------------------------------------------
   wait-for-scancodeio:
     name: Wait for ScanCode.io run
     runs-on: ubuntu-latest
-    needs: [create-scancode-from-sbom]
+    needs: [build-sbom]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -363,7 +329,7 @@ jobs:
         env:
           SCANCODEIO_BASE: ${{ secrets.SCANCODEIO_URL }}
           SCANCODEIO_TOKEN: ${{ secrets.SCANCODEIO_API_KEY }}
-          SCANCODEIO_PROJECT_UUID: ${{ needs.create-scancode-from-sbom.outputs.project_uuid }}
+          SCANCODEIO_PROJECT_UUID: ${{ needs.build-sbom.outputs.project_uuid }}
           POLL_INTERVAL_SEC: "10"
           POLL_TIMEOUT_SEC: "1800"
         run: |
@@ -376,12 +342,12 @@ jobs:
   import-scancode-data:
     name: Import ScanCode.io data into DejaCode
     runs-on: ubuntu-latest
-    needs: [wait-for-scancodeio, dejacode-objects, create-scancode-from-sbom]
+    needs: [wait-for-scancodeio, dejacode-objects, build-sbom]
     env:
       DEJACODE_BASE: ${{ secrets.DEJACODE_URL }}
       DEJACODE_TOKEN: ${{ secrets.DEJACODE_API_KEY }}
       PRODUCT_UUID: ${{ needs.dejacode-objects.outputs.product_uuid }}
-      PROJECT_UUID: ${{ needs.create-scancode-from-sbom.outputs.project_uuid }}
+      PROJECT_UUID: ${{ needs.build-sbom.outputs.project_uuid }}
     steps:
       - name: Trigger import
         run: |
