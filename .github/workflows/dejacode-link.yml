@@ -214,10 +214,9 @@ jobs:
 
       ##################################################################
       # 5) Add Component to Product
-      #    Primär: POST /api/v2/productcomponents/ (through model)
-      #    Fallback: PATCH Product.components mit UUID-Liste
+      #    Primär: POST /api/v2/product_components/ (through model)
       ##################################################################
-      - name: Add Component to Product (primary -> productcomponents)
+      - name: Add Component to Product (primary -> product_components)
         id: add_component_primary
         shell: bash
         continue-on-error: true
@@ -232,7 +231,7 @@ jobs:
             -H "Authorization: Token $DEJACODE_TOKEN" \
             -H "Content-Type: application/json" \
             -d "$BODY" \
-            -X POST "$DEJACODE_BASE/api/v2/productcomponents/")" || true
+            -X POST "$DEJACODE_BASE/api/v2/product_components/")" || true
           echo "HTTP_CODE=$HTTP_CODE"
           cat resp.json | jq -r . || true
           if [ "$HTTP_CODE" = "201" ] || [ "$HTTP_CODE" = "400" ]; then
@@ -240,32 +239,3 @@ jobs:
             exit 0
           fi
           exit 1
-
-      - name: Add Component to Product (fallback -> PATCH product.components)
-        if: steps.add_component_primary.outputs.primary_ok != 'true'
-        shell: bash
-        env:
-          PROD_API: ${{ steps.create_product.outputs.product_api_url }}
-          COMP_UUID: ${{ steps.create_component.outputs.component_uuid }}
-        run: |
-          set -euo pipefail
-          PROD_JSON="$(curl -sS --fail -H "Authorization: Token $DEJACODE_TOKEN" "$PROD_API")"
-          # Extrahiere existierende Component-UUIDs
-          EXISTING="$(jq -r '.components // [] | .[]?.uuid' <<<"$PROD_JSON" || true)"
-          TMP="$(mktemp)"
-          jq -n '[]' > "$TMP"
-          if [ -n "$EXISTING" ]; then
-            while read -r U; do
-              jq --arg u "$U" '. + [$u]' "$TMP" > "$TMP.next" && mv "$TMP.next" "$TMP"
-            done <<< "$EXISTING"
-          fi
-          if ! jq -e --arg u "$COMP_UUID" 'index($u)' "$TMP" >/dev/null; then
-            jq --arg u "$COMP_UUID" '. + [$u]' "$TMP" > "$TMP.next" && mv "$TMP.next" "$TMP"
-          fi
-          BODY="$(jq -n --slurpfile uu "$TMP" '{components: $uu[0]}')"
-          curl -sS --fail \
-            -H "Authorization: Token $DEJACODE_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "$BODY" \
-            -X PATCH "$PROD_API" | jq -r .
-          echo "Component successfully added to Product (fallback path)."
