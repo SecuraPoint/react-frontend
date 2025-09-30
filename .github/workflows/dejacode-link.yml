@@ -311,7 +311,7 @@ jobs:
           files: >-
             {"upload_file":"${{ steps.pick.outputs.sbom_path }}"}
           data: >-
-            {"name":"${{ env.PROJECT_NAME }}","pipeline":"load_sbom","execute_now":true}
+            {"name":"${{ env.PROJECT_NAME }}","pipeline":"load_sbom","execute_now":"True"}
           timeout: 20000
 
   # --- Auf ScanCode.io warten ----------------------------------------------
