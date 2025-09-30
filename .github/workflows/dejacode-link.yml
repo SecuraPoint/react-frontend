@@ -329,7 +329,7 @@ jobs:
         id: create_project
         run: |
           body=$(jq -n --arg n "${{ github.event.repository.name }}-${{ github.ref_name }}" \
-                      '{name:$n, pipeline:["load_sbom"]}')
+                      '{name:$n, pipeline:["load_sbom"], execute_now:true}')
           curl -sS --fail \
             -H "Authorization: Token $SCANCODEIO_TOKEN" \
             -H "Content-Type: application/json" \
@@ -364,6 +364,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [create-scancode-from-sbom]
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
