@@ -290,12 +290,12 @@ jobs:
           echo "spdx_path=${SPDX:-}" >> "$GITHUB_OUTPUT"
           echo "cdx_path=${CDX:-}"  >> "$GITHUB_OUTPUT"
 
-      - name: Pick SBOM path (prefer SPDX)
+      - name: Pick SBOM path (prefer CDX)
         id: pick
         shell: bash
         run: |
           set -euo pipefail
-          SBOM="${{ steps.locate.outputs.spdx_path }}"
+          SBOM="${{ steps.locate.outputs.cdx_path }}"
           if [ -z "$SBOM" ]; then SBOM="${{ steps.locate.outputs.cdx_path }}"; fi
           [ -s "$SBOM" ] || { echo "SBOM not found"; exit 1; }
           echo "sbom_path=$SBOM" >> "$GITHUB_OUTPUT"
@@ -314,7 +314,6 @@ jobs:
             {"name":"${{ env.PROJECT_NAME }}","pipeline":"load_sbom","execute_now":"True"}
           timeout: 20000
 
-  # --- Auf ScanCode.io warten ----------------------------------------------
   wait-for-scancodeio:
     name: Wait for ScanCode.io run
     runs-on: ubuntu-latest
@@ -338,7 +337,6 @@ jobs:
           scripts/poll_scancodeio.py
         shell: bash
 
-  # --- ScanCode.io → DejaCode importieren ----------------------------------
   import-scancode-data:
     name: Import ScanCode.io data into DejaCode
     runs-on: ubuntu-latest
