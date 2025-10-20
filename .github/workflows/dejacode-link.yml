@@ -9,7 +9,6 @@ permissions:
   contents: read
 
 env:
-  # Aus Secrets: DejaCode Basis-URL und API Token (ohne trailing slash)
   DEJACODE_BASE: ${{ secrets.DEJACODE_URL }}
   DEJACODE_TOKEN: ${{ secrets.DEJACODE_API_KEY }}
 
