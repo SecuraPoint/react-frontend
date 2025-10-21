@@ -241,7 +241,7 @@ jobs:
           echo "ERROR: Failed to link component to product."
           exit 1
 
-  # --- SBOM bauen (SPDX JSON) ----------------------------------------------
+  # --- Create ScanCode.io project and Build SBOM (SPDX JSON) ----------------------------------------------
   build-sbom:
     name: Build SPDX SBOM + create ScanCode.io project (one HTTP step)
     runs-on: ubuntu-latest
