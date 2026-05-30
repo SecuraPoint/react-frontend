@@ -9,7 +9,7 @@ A sample react frontend
 
 ```bash
 # Start nix shell with nodejs
-nix-shell -p nodejs
+nix-shell -p nodejs_26
 
 # Install dependencies
 npm install
